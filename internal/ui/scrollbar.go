@@ -12,8 +12,19 @@ type Scrollbar struct {
 	Height     int
 	TotalItems int
 	TopItem    int
+	Marks      []ScrollMark
 	dragging   bool
 	dragOffset int
+}
+
+// ScrollMark highlights Count items starting at Item on the track. Its style
+// must set the same color as foreground and background: a track cell shows two
+// marks at once by drawing a half block, which takes one color from each.
+type ScrollMark struct {
+	Item  int
+	Count int
+	Style term.Style
+	Rank  int // wins over lower ranks sharing a half cell
 }
 
 func (s *Scrollbar) Visible() bool {
@@ -41,12 +52,58 @@ func (s *Scrollbar) Render(surface Surface, rx, ry int) {
 		return
 	}
 	thumbTop, thumbH := s.ThumbPos()
+	halves := s.markHalves()
 	for y := 0; y < s.Height; y++ {
+		base := term.StyleScrollbar
 		if y >= thumbTop && y < thumbTop+thumbH {
-			surface.SetCell(rx, ry+y, term.Cell{Ch: '█', Style: term.StyleScrollbarThumb})
-		} else {
-			surface.SetCell(rx, ry+y, term.Cell{Ch: '█', Style: term.StyleScrollbar})
+			base = term.StyleScrollbarThumb
 		}
+		cell := term.Cell{Ch: '█', Style: base}
+		if halves != nil {
+			cell = markCell(base, halves[2*y], halves[2*y+1])
+		}
+		surface.SetCell(rx, ry+y, cell)
+	}
+}
+
+// markHalves resolves Marks to one style per half cell of the track, so the
+// track has twice the resolution of its rows. Every mark lands on at least one
+// half cell however many items share it, so a single changed line in a huge
+// file stays visible.
+func (s *Scrollbar) markHalves() []term.Style {
+	if len(s.Marks) == 0 || s.TotalItems <= 0 {
+		return nil
+	}
+	n := 2 * s.Height
+	halves := make([]term.Style, n)
+	ranks := make([]int, n)
+	half := func(item int) int {
+		h := item * n / s.TotalItems
+		return max(0, min(h, n-1))
+	}
+	for _, m := range s.Marks {
+		last := half(m.Item + max(m.Count, 1) - 1)
+		for h := half(m.Item); h <= last; h++ {
+			if halves[h] == term.StyleDefault || m.Rank > ranks[h] {
+				halves[h], ranks[h] = m.Style, m.Rank
+			}
+		}
+	}
+	return halves
+}
+
+func markCell(base, top, bottom term.Style) term.Cell {
+	switch {
+	case top == term.StyleDefault && bottom == term.StyleDefault:
+		return term.Cell{Ch: '█', Style: base}
+	case top == bottom:
+		return term.Cell{Ch: '█', Style: top}
+	case bottom == term.StyleDefault:
+		return term.Cell{Ch: '▄', Style: base, BgStyle: top}
+	case top == term.StyleDefault:
+		return term.Cell{Ch: '▀', Style: base, BgStyle: bottom}
+	default:
+		return term.Cell{Ch: '▀', Style: top, BgStyle: bottom}
 	}
 }
 

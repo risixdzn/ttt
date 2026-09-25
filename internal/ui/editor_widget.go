@@ -54,6 +54,7 @@ type EditorPaneWidget struct {
 	mouseDown               bool
 	scrollbar               Scrollbar
 	hscrollbar              HScrollbar
+	scrollMarks             []ScrollMark
 	Diagnostics             []Diagnostic
 	Folds                   *fold.State
 	OnChange                func()

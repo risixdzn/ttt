@@ -318,6 +318,7 @@ func (e *EditorPaneWidget) Render(surface Surface) {
 			e.scrollbar.TotalItems = totalLines + h - 1
 			e.scrollbar.TopItem = e.Viewport.TopLine
 		}
+		e.scrollbar.Marks = e.gitScrollMarks(foldsActive, editorW, tabW)
 		e.scrollbar.Render(surface, scrollbarCol, 0)
 	}
 

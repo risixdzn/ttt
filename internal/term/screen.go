@@ -78,6 +78,9 @@ const (
 	StyleFileIconCyan
 	StyleFileIconBlue
 	StyleFileIconMagenta
+	StyleScrollMarkAdded
+	StyleScrollMarkModified
+	StyleScrollMarkDeleted
 	styleCount
 )
 
