@@ -75,7 +75,7 @@ func TestBuildStyleMapIncludesFileIconStyles(t *testing.T) {
 	}
 }
 
-func TestBuildStyleMapScrollMarksFillBothHalvesWithGutterColor(t *testing.T) {
+func TestBuildStyleMapScrollMarksUseGutterColorForForegroundAndBackground(t *testing.T) {
 	theme := config.DefaultTheme()
 	theme.Diff.GutterModified = config.StyleDef{Fg: "#123456"}
 	style := BuildStyleMap(theme)[term.StyleScrollMarkModified]

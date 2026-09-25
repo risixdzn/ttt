@@ -91,12 +91,12 @@ func (s *Scrollbar) markSlots() []term.Style {
 	slotOf := func(item int) int {
 		return max(0, min(item*total/s.TotalItems, total-1))
 	}
-	for _, m := range s.Marks {
-		first := slotOf(m.Item)
-		last := slotOf(m.Item + max(m.Count, 1) - 1)
-		for i := first; i <= last; i++ {
-			if slots[i] == term.StyleDefault || m.Rank > ranks[i] {
-				slots[i], ranks[i] = m.Style, m.Rank
+	for _, mark := range s.Marks {
+		first := slotOf(mark.Item)
+		last := slotOf(mark.Item + max(mark.Count, 1) - 1)
+		for slot := first; slot <= last; slot++ {
+			if slots[slot] == term.StyleDefault || mark.Rank > ranks[slot] {
+				slots[slot], ranks[slot] = mark.Style, mark.Rank
 			}
 		}
 	}
@@ -110,15 +110,15 @@ type scrollGlyph struct {
 	top, bottom int
 }
 
-func (g scrollGlyph) draw(fg, bg term.Style) [cellSlots]term.Style {
-	var out [cellSlots]term.Style
-	for i := range out {
-		out[i] = bg
-		if i >= g.top && i <= g.bottom {
-			out[i] = fg
+func (glyph scrollGlyph) draw(fg, bg term.Style) [cellSlots]term.Style {
+	var drawn [cellSlots]term.Style
+	for slot := range drawn {
+		drawn[slot] = bg
+		if slot >= glyph.top && slot <= glyph.bottom {
+			drawn[slot] = fg
 		}
 	}
-	return out
+	return drawn
 }
 
 var blockGlyphs = []scrollGlyph{
@@ -145,13 +145,13 @@ var legacyGlyphs = append(slices.Clone(blockGlyphs),
 func markCell(track term.Style, marks []term.Style, glyphs []scrollGlyph) term.Cell {
 	var want [cellSlots]term.Style
 	colors := []term.Style{track}
-	for i, st := range marks {
-		if st == term.StyleDefault {
-			st = track
+	for slot, style := range marks {
+		if style == term.StyleDefault {
+			style = track
 		}
-		want[i] = st
-		if !slices.Contains(colors, st) {
-			colors = append(colors, st)
+		want[slot] = style
+		if !slices.Contains(colors, style) {
+			colors = append(colors, style)
 		}
 	}
 	if len(colors) == 1 {
@@ -160,11 +160,11 @@ func markCell(track term.Style, marks []term.Style, glyphs []scrollGlyph) term.C
 
 	var best term.Cell
 	bestCost := math.MaxInt
-	for _, g := range glyphs {
+	for _, glyph := range glyphs {
 		for _, fg := range colors {
 			for _, bg := range colors {
-				if cost := drawCost(want, g.draw(fg, bg), track); cost < bestCost {
-					best = term.Cell{Ch: g.ch, Style: fg, BgStyle: trackFill(bg)}
+				if cost := drawCost(want, glyph.draw(fg, bg), track); cost < bestCost {
+					best = term.Cell{Ch: glyph.ch, Style: fg, BgStyle: trackFill(bg)}
 					bestCost = cost
 				}
 			}
@@ -184,17 +184,17 @@ const (
 
 func drawCost(want, drawn [cellSlots]term.Style, track term.Style) int {
 	cost := 0
-	for i := range want {
+	for slot := range want {
 		switch {
-		case drawn[i] == want[i]:
-		case want[i] == track:
+		case drawn[slot] == want[slot]:
+		case want[slot] == track:
 			cost += costTrackAsMark
-		case drawn[i] == track:
+		case drawn[slot] == track:
 			cost += costMarkAsTrack
 		default:
 			cost += costMarkAsOther
 		}
-		if want[i] != track && !slices.Contains(drawn[:], want[i]) {
+		if want[slot] != track && !slices.Contains(drawn[:], want[slot]) {
 			cost += costMarkHidden
 		}
 	}
@@ -202,14 +202,14 @@ func drawCost(want, drawn [cellSlots]term.Style, track term.Style) int {
 }
 
 // Track styles only set a foreground, so they cannot serve as BgStyle.
-func trackFill(st term.Style) term.Style {
-	switch st {
+func trackFill(style term.Style) term.Style {
+	switch style {
 	case term.StyleScrollbar:
 		return term.StyleScrollbarFill
 	case term.StyleScrollbarThumb:
 		return term.StyleScrollbarThumbFill
 	}
-	return st
+	return style
 }
 
 func (s *Scrollbar) HandleEvent(ev tcell.Event) (newTopItem int, consumed bool) {

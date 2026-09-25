@@ -30,8 +30,8 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 	var marks []ScrollMark
 	add := func(item, count int, kind diff.LineChangeKind) {
 		style := gitMarkStyle[kind]
-		if n := len(marks); n > 0 {
-			last := &marks[n-1]
+		if len(marks) > 0 {
+			last := &marks[len(marks)-1]
 			if last.Style == style && last.Item+last.Count == item {
 				last.Count += count
 				return
@@ -43,10 +43,10 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 	switch {
 	case e.WordWrap:
 		row := 0
-		for i, line := range e.Buf.Lines {
+		for lineIdx, line := range e.Buf.Lines {
 			rows := wrapLineVisualRows(line, editorW, tabW)
-			if i < len(changes) && changes[i] != diff.LineUnchanged {
-				add(row, rows, changes[i])
+			if lineIdx < len(changes) && changes[lineIdx] != diff.LineUnchanged {
+				add(row, rows, changes[lineIdx])
 			}
 			row += rows
 		}
@@ -54,22 +54,22 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 		// Lines hidden in a collapsed fold count toward its header line, so
 		// changes inside a fold still show.
 		visible := e.cachedVisibleLines
-		for v, start := range visible {
+		for visibleIdx, start := range visible {
 			if start >= len(changes) {
 				break // changes lag behind the buffer until the next git diff
 			}
 			end := len(changes)
-			if v+1 < len(visible) {
-				end = min(visible[v+1], end)
+			if visibleIdx+1 < len(visible) {
+				end = min(visible[visibleIdx+1], end)
 			}
 			if kind := strongestChange(changes[start:end]); kind != diff.LineUnchanged {
-				add(v, 1, kind)
+				add(visibleIdx, 1, kind)
 			}
 		}
 	default:
-		for i, kind := range changes {
+		for lineIdx, kind := range changes {
 			if kind != diff.LineUnchanged {
-				add(i, 1, kind)
+				add(lineIdx, 1, kind)
 			}
 		}
 	}

@@ -14,11 +14,11 @@ import (
 )
 
 func TestScrollbarMarkSingleItemInHugeRangeStaysVisible(t *testing.T) {
-	s := Scrollbar{Height: 10, TotalItems: 100000, Marks: []ScrollMark{{Item: 50000, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1}}}
+	scrollbar := Scrollbar{Height: 10, TotalItems: 100000, Marks: []ScrollMark{{Item: 50000, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1}}}
 	var marked []int
-	for i, st := range s.markSlots() {
-		if st != term.StyleDefault {
-			marked = append(marked, i)
+	for slot, style := range scrollbar.markSlots() {
+		if style != term.StyleDefault {
+			marked = append(marked, slot)
 		}
 	}
 	if fmt.Sprint(marked) != "[40]" {
@@ -27,96 +27,96 @@ func TestScrollbarMarkSingleItemInHugeRangeStaysVisible(t *testing.T) {
 }
 
 func TestScrollbarMarkHigherRankWinsSharedSlot(t *testing.T) {
-	s := Scrollbar{Height: 2, TotalItems: 400, Marks: []ScrollMark{
+	scrollbar := Scrollbar{Height: 2, TotalItems: 400, Marks: []ScrollMark{
 		{Item: 0, Count: 1, Style: term.StyleScrollMarkDeleted, Rank: 3},
 		{Item: 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1},
 		{Item: 2, Count: 1, Style: term.StyleScrollMarkModified, Rank: 2},
 	}}
-	if got := s.markSlots()[0]; got != term.StyleScrollMarkDeleted {
+	if got := scrollbar.markSlots()[0]; got != term.StyleScrollMarkDeleted {
 		t.Fatalf("shared slot = %v, want deleted", got)
 	}
 }
 
-func drawnSlots(t *testing.T, c term.Cell) [cellSlots]term.Style {
+func drawnSlots(t *testing.T, cell term.Cell) [cellSlots]term.Style {
 	t.Helper()
-	bg := c.BgStyle
+	bg := cell.BgStyle
 	switch bg {
 	case term.StyleScrollbarFill:
 		bg = term.StyleScrollbar
 	case term.StyleScrollbarThumbFill:
 		bg = term.StyleScrollbarThumb
 	}
-	for _, g := range legacyGlyphs {
-		if g.ch == c.Ch {
-			return g.draw(c.Style, bg)
+	for _, glyph := range legacyGlyphs {
+		if glyph.ch == cell.Ch {
+			return glyph.draw(cell.Style, bg)
 		}
 	}
-	t.Fatalf("unknown track glyph %q", c.Ch)
+	t.Fatalf("unknown track glyph %q", cell.Ch)
 	return [cellSlots]term.Style{}
 }
 
 func slotPattern(marks map[int]term.Style) []term.Style {
 	slots := make([]term.Style, cellSlots)
-	for i, st := range marks {
-		slots[i] = st
+	for slot, style := range marks {
+		slots[slot] = style
 	}
 	return slots
 }
 
 func TestScrollbarMarkCellReproducesPattern(t *testing.T) {
-	base := term.StyleScrollbar
-	add, mod, del := term.StyleScrollMarkAdded, term.StyleScrollMarkModified, term.StyleScrollMarkDeleted
-	full := func(st term.Style) map[int]term.Style {
-		m := map[int]term.Style{}
-		for i := range cellSlots {
-			m[i] = st
+	track := term.StyleScrollbar
+	added, modified, deleted := term.StyleScrollMarkAdded, term.StyleScrollMarkModified, term.StyleScrollMarkDeleted
+	fullCell := func(style term.Style) map[int]term.Style {
+		marks := map[int]term.Style{}
+		for slot := range cellSlots {
+			marks[slot] = style
 		}
-		return m
+		return marks
 	}
-	tests := []struct {
+	cases := []struct {
 		name   string
 		glyphs []scrollGlyph
 		marks  map[int]term.Style
 	}{
 		{"no marks", blockGlyphs, nil},
-		{"full cell", blockGlyphs, full(add)},
-		{"top half", blockGlyphs, map[int]term.Style{0: mod, 1: mod, 2: mod, 3: mod}},
-		{"bottom half", blockGlyphs, map[int]term.Style{4: del, 5: del, 6: del, 7: del}},
-		{"top eighth", blockGlyphs, map[int]term.Style{0: add}},
-		{"bottom eighth", blockGlyphs, map[int]term.Style{7: add}},
-		{"bottom quarter", blockGlyphs, map[int]term.Style{6: mod, 7: mod}},
-		{"two colors split", blockGlyphs, map[int]term.Style{0: add, 1: add, 2: add, 3: add, 4: mod, 5: mod, 6: mod, 7: mod}},
-		{"thin bar row 3", legacyGlyphs, map[int]term.Style{3: add}},
-		{"thin bar row 6", legacyGlyphs, map[int]term.Style{6: del}},
-		{"upper quarter", legacyGlyphs, map[int]term.Style{0: mod, 1: mod}},
+		{"full cell", blockGlyphs, fullCell(added)},
+		{"top half", blockGlyphs, map[int]term.Style{0: modified, 1: modified, 2: modified, 3: modified}},
+		{"bottom half", blockGlyphs, map[int]term.Style{4: deleted, 5: deleted, 6: deleted, 7: deleted}},
+		{"top eighth", blockGlyphs, map[int]term.Style{0: added}},
+		{"bottom eighth", blockGlyphs, map[int]term.Style{7: added}},
+		{"bottom quarter", blockGlyphs, map[int]term.Style{6: modified, 7: modified}},
+		{"two colors split", blockGlyphs, map[int]term.Style{0: added, 1: added, 2: added, 3: added, 4: modified, 5: modified, 6: modified, 7: modified}},
+		{"thin bar row 3", legacyGlyphs, map[int]term.Style{3: added}},
+		{"thin bar row 6", legacyGlyphs, map[int]term.Style{6: deleted}},
+		{"upper quarter", legacyGlyphs, map[int]term.Style{0: modified, 1: modified}},
 	}
-	for _, tt := range tests {
-		want := slotPattern(tt.marks)
-		for i := range want {
-			if want[i] == term.StyleDefault {
-				want[i] = base
+	for _, testCase := range cases {
+		want := slotPattern(testCase.marks)
+		for slot := range want {
+			if want[slot] == term.StyleDefault {
+				want[slot] = track
 			}
 		}
-		got := drawnSlots(t, markCell(base, slotPattern(tt.marks), tt.glyphs))
+		got := drawnSlots(t, markCell(track, slotPattern(testCase.marks), testCase.glyphs))
 		if fmt.Sprint(got[:]) != fmt.Sprint(want) {
-			t.Errorf("%s: drew %v, want %v", tt.name, got, want)
+			t.Errorf("%s: drew %v, want %v", testCase.name, got, want)
 		}
 	}
 }
 
 func TestScrollbarMarkCellNeverHidesAMark(t *testing.T) {
-	base := term.StyleScrollbarThumb
-	add, del := term.StyleScrollMarkAdded, term.StyleScrollMarkDeleted
+	track := term.StyleScrollbarThumb
+	added, deleted := term.StyleScrollMarkAdded, term.StyleScrollMarkDeleted
 	for _, glyphs := range [][]scrollGlyph{blockGlyphs, legacyGlyphs} {
-		for a := range cellSlots {
-			for d := range cellSlots {
-				if a == d {
+		for addedSlot := range cellSlots {
+			for deletedSlot := range cellSlots {
+				if addedSlot == deletedSlot {
 					continue
 				}
-				slots := slotPattern(map[int]term.Style{a: add, d: del})
-				got := drawnSlots(t, markCell(base, slots, glyphs))
-				if !slices.Contains(got[:], add) || !slices.Contains(got[:], del) {
-					t.Fatalf("added at %d, deleted at %d: drew %v, a mark is hidden", a, d, got)
+				marks := slotPattern(map[int]term.Style{addedSlot: added, deletedSlot: deleted})
+				got := drawnSlots(t, markCell(track, marks, glyphs))
+				if !slices.Contains(got[:], added) || !slices.Contains(got[:], deleted) {
+					t.Fatalf("added at %d, deleted at %d: drew %v, a mark is hidden", addedSlot, deletedSlot, got)
 				}
 			}
 		}
@@ -124,46 +124,46 @@ func TestScrollbarMarkCellNeverHidesAMark(t *testing.T) {
 }
 
 func TestScrollbarMarkCellBlocksFallBackToNearestHalf(t *testing.T) {
-	base := term.StyleScrollbar
-	add := term.StyleScrollMarkAdded
-	got := drawnSlots(t, markCell(base, slotPattern(map[int]term.Style{2: add}), blockGlyphs))
-	if got[2] != add || got[6] != base {
+	track := term.StyleScrollbar
+	added := term.StyleScrollMarkAdded
+	got := drawnSlots(t, markCell(track, slotPattern(map[int]term.Style{2: added}), blockGlyphs))
+	if got[2] != added || got[6] != track {
 		t.Fatalf("mid-top mark without legacy glyphs drew %v, want it in the top half", got)
 	}
 }
 
-func newMarksTestEditor(n int) *EditorPaneWidget {
-	lines := make([]string, n)
-	for i := range lines {
-		lines[i] = fmt.Sprintf("line %d", i)
+func newMarksTestEditor(lineCount int) *EditorPaneWidget {
+	lines := make([]string, lineCount)
+	for lineIdx := range lines {
+		lines[lineIdx] = fmt.Sprintf("line %d", lineIdx)
 	}
 	buf := &buffer.Buffer{Lines: lines}
 	return NewEditorPaneWidget(buf, &cursor.Cursor{}, &view.Viewport{Width: 40, Height: 10})
 }
 
 func TestEditorRendersGitChangeOnScrollbar(t *testing.T) {
-	e := newMarksTestEditor(200)
+	editor := newMarksTestEditor(200)
 	changes := make([]diff.LineChangeKind, 200)
 	changes[150] = diff.LineModified
-	e.LineChanges = changes
-	e.SetRect(Rect{W: 40, H: 10})
+	editor.LineChanges = changes
+	editor.SetRect(Rect{W: 40, H: 10})
 
 	grid := makeGrid(40, 10)
-	e.Render(NewRenderSurface(grid, Rect{W: 40, H: 10}))
+	editor.Render(NewRenderSurface(grid, Rect{W: 40, H: 10}))
 
 	// TotalItems = 200+10-1 = 209, 80 slots: line 150 -> slot 57, row 7.
-	for y := range 10 {
-		slots := drawnSlots(t, grid[y][39])
-		if marked := slices.Contains(slots[:], term.StyleScrollMarkModified); marked != (y == 7) {
-			t.Fatalf("scrollbar row %d = %+v, want the modified mark only on row 7", y, grid[y][39])
+	for row := range 10 {
+		slots := drawnSlots(t, grid[row][39])
+		if marked := slices.Contains(slots[:], term.StyleScrollMarkModified); marked != (row == 7) {
+			t.Fatalf("scrollbar row %d = %+v, want the modified mark only on row 7", row, grid[row][39])
 		}
 	}
 }
 
 func TestGitScrollMarksMergeRuns(t *testing.T) {
-	e := newMarksTestEditor(10)
-	e.LineChanges = []diff.LineChangeKind{0, 1, 1, 1, 2, 0, 1, 0, 0, 3}
-	got := e.gitScrollMarks(false, 40, 4)
+	editor := newMarksTestEditor(10)
+	editor.LineChanges = []diff.LineChangeKind{0, 1, 1, 1, 2, 0, 1, 0, 0, 3}
+	got := editor.gitScrollMarks(false, 40, 4)
 	want := []ScrollMark{
 		{Item: 1, Count: 3, Style: term.StyleScrollMarkAdded, Rank: 1},
 		{Item: 4, Count: 1, Style: term.StyleScrollMarkModified, Rank: 2},
@@ -176,53 +176,53 @@ func TestGitScrollMarksMergeRuns(t *testing.T) {
 }
 
 func TestGitScrollMarksAttributeFoldedChangesToHeader(t *testing.T) {
-	e := newMarksTestEditor(10)
-	e.Folds = fold.NewState()
-	e.Folds.SetRanges([]fold.Range{{StartLine: 2, EndLine: 6}})
-	e.Folds.Toggle(2)
-	e.cachedVisibleLines = e.Folds.VisibleLines(10)
+	editor := newMarksTestEditor(10)
+	editor.Folds = fold.NewState()
+	editor.Folds.SetRanges([]fold.Range{{StartLine: 2, EndLine: 6}})
+	editor.Folds.Toggle(2)
+	editor.cachedVisibleLines = editor.Folds.VisibleLines(10)
 	changes := make([]diff.LineChangeKind, 10)
 	changes[4] = diff.LineAdded
 	changes[5] = diff.LineDeleted
 	changes[8] = diff.LineModified
-	e.LineChanges = changes
+	editor.LineChanges = changes
 
-	got := e.gitScrollMarks(true, 40, 4)
+	got := editor.gitScrollMarks(true, 40, 4)
 	want := []ScrollMark{
 		{Item: 2, Count: 1, Style: term.StyleScrollMarkDeleted, Rank: 3},
 		{Item: 4, Count: 1, Style: term.StyleScrollMarkModified, Rank: 2},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("marks = %v, want %v (visible %v)", got, want, e.cachedVisibleLines)
+		t.Fatalf("marks = %v, want %v (visible %v)", got, want, editor.cachedVisibleLines)
 	}
 }
 
 func TestGitScrollMarksUseVisualRowsUnderWordWrap(t *testing.T) {
-	e := newMarksTestEditor(3)
-	e.WordWrap = true
-	e.Buf.Lines = []string{"aaaa bbbb cccc dddd", "short", "x"}
-	e.LineChanges = []diff.LineChangeKind{diff.LineModified, 0, diff.LineAdded}
+	editor := newMarksTestEditor(3)
+	editor.WordWrap = true
+	editor.Buf.Lines = []string{"aaaa bbbb cccc dddd", "short", "x"}
+	editor.LineChanges = []diff.LineChangeKind{diff.LineModified, 0, diff.LineAdded}
 
-	got := e.gitScrollMarks(false, 5, 4)
-	first := wrapLineVisualRows(e.Buf.Lines[0], 5, 4)
+	got := editor.gitScrollMarks(false, 5, 4)
+	firstLineRows := wrapLineVisualRows(editor.Buf.Lines[0], 5, 4)
 	want := []ScrollMark{
-		{Item: 0, Count: first, Style: term.StyleScrollMarkModified, Rank: 2},
-		{Item: first + 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1},
+		{Item: 0, Count: firstLineRows, Style: term.StyleScrollMarkModified, Rank: 2},
+		{Item: firstLineRows + 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1},
 	}
-	if first < 2 || fmt.Sprint(got) != fmt.Sprint(want) {
+	if firstLineRows < 2 || fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("marks = %v, want %v", got, want)
 	}
 }
 
 func TestGitScrollMarksToleratesChangesShorterThanBuffer(t *testing.T) {
-	e := newMarksTestEditor(10)
-	e.Folds = fold.NewState()
-	e.Folds.SetRanges([]fold.Range{{StartLine: 1, EndLine: 3}})
-	e.Folds.Toggle(1)
-	e.cachedVisibleLines = e.Folds.VisibleLines(10)
-	e.LineChanges = []diff.LineChangeKind{0, 0, diff.LineAdded}
+	editor := newMarksTestEditor(10)
+	editor.Folds = fold.NewState()
+	editor.Folds.SetRanges([]fold.Range{{StartLine: 1, EndLine: 3}})
+	editor.Folds.Toggle(1)
+	editor.cachedVisibleLines = editor.Folds.VisibleLines(10)
+	editor.LineChanges = []diff.LineChangeKind{0, 0, diff.LineAdded}
 
-	got := e.gitScrollMarks(true, 40, 4)
+	got := editor.gitScrollMarks(true, 40, 4)
 	want := []ScrollMark{{Item: 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1}}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("marks = %v, want %v", got, want)
