@@ -5,6 +5,19 @@ import (
 	"github.com/eugenioenko/ttt/internal/term"
 )
 
+var gitMarkStyle = map[diff.LineChangeKind]term.Style{
+	diff.LineAdded:    term.StyleScrollMarkAdded,
+	diff.LineModified: term.StyleScrollMarkModified,
+	diff.LineDeleted:  term.StyleScrollMarkDeleted,
+}
+
+// gitMarkRank decides which change shows where several share a spot.
+var gitMarkRank = map[diff.LineChangeKind]int{
+	diff.LineAdded:    1,
+	diff.LineModified: 2,
+	diff.LineDeleted:  3,
+}
+
 // gitScrollMarks must count items exactly as the scrollbar's TotalItems does
 // (visual rows under wrap, visible lines under folds), or marks drift from the
 // thumb.
@@ -13,14 +26,18 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 	if len(changes) == 0 {
 		return nil
 	}
-	marks := e.scrollMarks[:0]
+
+	var marks []ScrollMark
 	add := func(item, count int, kind diff.LineChangeKind) {
-		style, rank := scrollMarkStyle(kind)
-		if n := len(marks); n > 0 && marks[n-1].Style == style && marks[n-1].Item+marks[n-1].Count == item {
-			marks[n-1].Count += count
-			return
+		style := gitMarkStyle[kind]
+		if n := len(marks); n > 0 {
+			last := &marks[n-1]
+			if last.Style == style && last.Item+last.Count == item {
+				last.Count += count
+				return
+			}
 		}
-		marks = append(marks, ScrollMark{Item: item, Count: count, Style: style, Rank: rank})
+		marks = append(marks, ScrollMark{Item: item, Count: count, Style: style, Rank: gitMarkRank[kind]})
 	}
 
 	switch {
@@ -34,22 +51,19 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 			row += rows
 		}
 	case foldsActive:
-		// A collapsed fold's hidden lines are attributed to its header line,
-		// so changes inside a fold still show.
+		// Lines hidden in a collapsed fold count toward its header line, so
+		// changes inside a fold still show.
 		visible := e.cachedVisibleLines
 		for v, start := range visible {
+			if start >= len(changes) {
+				break // changes lag behind the buffer until the next git diff
+			}
 			end := len(changes)
 			if v+1 < len(visible) {
 				end = min(visible[v+1], end)
 			}
-			strongest := diff.LineUnchanged
-			for i := start; i < end; i++ {
-				if changes[i] != diff.LineUnchanged && scrollMarkRank(changes[i]) > scrollMarkRank(strongest) {
-					strongest = changes[i]
-				}
-			}
-			if strongest != diff.LineUnchanged {
-				add(v, 1, strongest)
+			if kind := strongestChange(changes[start:end]); kind != diff.LineUnchanged {
+				add(v, 1, kind)
 			}
 		}
 	default:
@@ -59,29 +73,15 @@ func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) [
 			}
 		}
 	}
-	e.scrollMarks = marks
 	return marks
 }
 
-func scrollMarkStyle(kind diff.LineChangeKind) (term.Style, int) {
-	switch kind {
-	case diff.LineAdded:
-		return term.StyleScrollMarkAdded, scrollMarkRank(kind)
-	case diff.LineModified:
-		return term.StyleScrollMarkModified, scrollMarkRank(kind)
-	default:
-		return term.StyleScrollMarkDeleted, scrollMarkRank(kind)
+func strongestChange(changes []diff.LineChangeKind) diff.LineChangeKind {
+	strongest := diff.LineUnchanged
+	for _, kind := range changes {
+		if gitMarkRank[kind] > gitMarkRank[strongest] {
+			strongest = kind
+		}
 	}
-}
-
-func scrollMarkRank(kind diff.LineChangeKind) int {
-	switch kind {
-	case diff.LineAdded:
-		return 1
-	case diff.LineModified:
-		return 2
-	case diff.LineDeleted:
-		return 3
-	}
-	return 0
+	return strongest
 }

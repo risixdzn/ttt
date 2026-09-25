@@ -39,35 +39,20 @@ func TestScrollbarMarkHigherRankWinsSharedSlot(t *testing.T) {
 
 func drawnSlots(t *testing.T, c term.Cell) [cellSlots]term.Style {
 	t.Helper()
-	fill := map[term.Style]term.Style{
-		term.StyleScrollbarFill:      term.StyleScrollbar,
-		term.StyleScrollbarThumbFill: term.StyleScrollbarThumb,
-	}
-	var out [cellSlots]term.Style
-	if c.Ch == '█' {
-		for i := range out {
-			out[i] = c.Style
-		}
-		return out
+	bg := c.BgStyle
+	switch bg {
+	case term.StyleScrollbarFill:
+		bg = term.StyleScrollbar
+	case term.StyleScrollbarThumbFill:
+		bg = term.StyleScrollbarThumb
 	}
 	for _, g := range legacyGlyphs {
-		if g.ch != c.Ch {
-			continue
+		if g.ch == c.Ch {
+			return g.draw(c.Style, bg)
 		}
-		bg := c.BgStyle
-		if f, ok := fill[bg]; ok {
-			bg = f
-		}
-		for i := range out {
-			out[i] = bg
-			if g.mask&(1<<i) != 0 {
-				out[i] = c.Style
-			}
-		}
-		return out
 	}
 	t.Fatalf("unknown track glyph %q", c.Ch)
-	return out
+	return [cellSlots]term.Style{}
 }
 
 func slotPattern(marks map[int]term.Style) []term.Style {
@@ -225,6 +210,21 @@ func TestGitScrollMarksUseVisualRowsUnderWordWrap(t *testing.T) {
 		{Item: first + 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1},
 	}
 	if first < 2 || fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("marks = %v, want %v", got, want)
+	}
+}
+
+func TestGitScrollMarksToleratesChangesShorterThanBuffer(t *testing.T) {
+	e := newMarksTestEditor(10)
+	e.Folds = fold.NewState()
+	e.Folds.SetRanges([]fold.Range{{StartLine: 1, EndLine: 3}})
+	e.Folds.Toggle(1)
+	e.cachedVisibleLines = e.Folds.VisibleLines(10)
+	e.LineChanges = []diff.LineChangeKind{0, 0, diff.LineAdded}
+
+	got := e.gitScrollMarks(true, 40, 4)
+	want := []ScrollMark{{Item: 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("marks = %v, want %v", got, want)
 	}
 }
