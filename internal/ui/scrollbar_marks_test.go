@@ -37,7 +37,6 @@ func TestScrollbarMarkHigherRankWinsSharedSlot(t *testing.T) {
 	}
 }
 
-// drawnSlots decodes a track cell back into the style each eighth shows.
 func drawnSlots(t *testing.T, c term.Cell) [cellSlots]term.Style {
 	t.Helper()
 	fill := map[term.Style]term.Style{

@@ -15,9 +15,7 @@ type Scrollbar struct {
 	TotalItems int
 	TopItem    int
 	Marks      []ScrollMark
-	// LegacyGlyphs also draws marks with the Symbols for Legacy Computing
-	// block, which places a thin line anywhere in a cell but is missing from
-	// many fonts.
+	// Symbols for Legacy Computing glyphs are missing from many fonts.
 	LegacyGlyphs bool
 	dragging     bool
 	dragOffset   int
@@ -76,13 +74,10 @@ func (s *Scrollbar) Render(surface Surface, rx, ry int) {
 	}
 }
 
-// cellSlots is the vertical resolution of one track cell: block glyphs split a
-// cell into eighths.
 const cellSlots = 8
 
-// markSlots resolves Marks to one style per slot of the track. Every mark
-// lands on at least one slot however many items share it, so a single changed
-// line in a huge file stays visible.
+// Every mark keeps at least one slot however many items share it, so a single
+// changed line in a huge file stays visible.
 func (s *Scrollbar) markSlots() []term.Style {
 	if len(s.Marks) == 0 || s.TotalItems <= 0 {
 		return nil
@@ -104,8 +99,7 @@ func (s *Scrollbar) markSlots() []term.Style {
 	return slots
 }
 
-// scrollGlyph draws its foreground on the slots set in mask (bit 0 is the top
-// eighth) and its background on the rest.
+// mask bit 0 is the top eighth; set bits show the foreground.
 type scrollGlyph struct {
 	ch   rune
 	mask uint8
@@ -136,9 +130,8 @@ const (
 	costMarkHidden  = 100
 )
 
-// markCell picks the glyph and color pair that best reproduces slots, one
-// cell's worth of mark styles (zero means the track). A cell holds only two
-// colors, so with two mark colors present the track color gives way.
+// A zero slot means the track. A cell holds only two colors, so with two mark
+// colors present the track color gives way.
 func markCell(base term.Style, slots []term.Style, glyphs []scrollGlyph) term.Cell {
 	colors := []term.Style{base}
 	for _, st := range slots {
@@ -202,8 +195,7 @@ func markCell(base term.Style, slots []term.Style, glyphs []scrollGlyph) term.Ce
 	return best
 }
 
-// trackFill swaps a track style, which only colors the foreground, for one
-// that can also serve as a background.
+// Track styles only set a foreground, so they cannot serve as BgStyle.
 func trackFill(st term.Style) term.Style {
 	switch st {
 	case term.StyleScrollbar:

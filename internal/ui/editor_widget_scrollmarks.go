@@ -5,9 +5,9 @@ import (
 	"github.com/eugenioenko/ttt/internal/term"
 )
 
-// gitScrollMarks maps LineChanges onto the same item space the vertical
-// scrollbar uses (buffer lines, visible lines under folds, or visual rows under
-// word wrap), merging runs of equal changes into one mark.
+// gitScrollMarks must count items exactly as the scrollbar's TotalItems does
+// (visual rows under wrap, visible lines under folds), or marks drift from the
+// thumb.
 func (e *EditorPaneWidget) gitScrollMarks(foldsActive bool, editorW, tabW int) []ScrollMark {
 	changes := e.LineChanges
 	if len(changes) == 0 {
