@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/eugenioenko/ttt/internal/core/buffer"
@@ -14,50 +15,136 @@ import (
 
 func TestScrollbarMarkSingleItemInHugeRangeStaysVisible(t *testing.T) {
 	s := Scrollbar{Height: 10, TotalItems: 100000, Marks: []ScrollMark{{Item: 50000, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1}}}
-	halves := s.markHalves()
-	marked := 0
-	for i, st := range halves {
+	var marked []int
+	for i, st := range s.markSlots() {
 		if st != term.StyleDefault {
-			marked++
-			if i != 10 {
-				t.Fatalf("mark landed on half %d, want 10", i)
-			}
+			marked = append(marked, i)
 		}
 	}
-	if marked != 1 {
-		t.Fatalf("marked halves = %d, want 1", marked)
+	if fmt.Sprint(marked) != "[40]" {
+		t.Fatalf("marked slots = %v, want [40]", marked)
 	}
 }
 
-func TestScrollbarMarkHigherRankWinsSharedHalf(t *testing.T) {
+func TestScrollbarMarkHigherRankWinsSharedSlot(t *testing.T) {
 	s := Scrollbar{Height: 2, TotalItems: 400, Marks: []ScrollMark{
 		{Item: 0, Count: 1, Style: term.StyleScrollMarkDeleted, Rank: 3},
 		{Item: 1, Count: 1, Style: term.StyleScrollMarkAdded, Rank: 1},
 		{Item: 2, Count: 1, Style: term.StyleScrollMarkModified, Rank: 2},
 	}}
-	if got := s.markHalves()[0]; got != term.StyleScrollMarkDeleted {
-		t.Fatalf("shared half = %v, want deleted", got)
+	if got := s.markSlots()[0]; got != term.StyleScrollMarkDeleted {
+		t.Fatalf("shared slot = %v, want deleted", got)
 	}
 }
 
-func TestScrollbarMarkCellGlyphs(t *testing.T) {
+// drawnSlots decodes a track cell back into the style each eighth shows.
+func drawnSlots(t *testing.T, c term.Cell) [cellSlots]term.Style {
+	t.Helper()
+	fill := map[term.Style]term.Style{
+		term.StyleScrollbarFill:      term.StyleScrollbar,
+		term.StyleScrollbarThumbFill: term.StyleScrollbarThumb,
+	}
+	var out [cellSlots]term.Style
+	if c.Ch == '█' {
+		for i := range out {
+			out[i] = c.Style
+		}
+		return out
+	}
+	for _, g := range legacyGlyphs {
+		if g.ch != c.Ch {
+			continue
+		}
+		bg := c.BgStyle
+		if f, ok := fill[bg]; ok {
+			bg = f
+		}
+		for i := range out {
+			out[i] = bg
+			if g.mask&(1<<i) != 0 {
+				out[i] = c.Style
+			}
+		}
+		return out
+	}
+	t.Fatalf("unknown track glyph %q", c.Ch)
+	return out
+}
+
+func slotPattern(marks map[int]term.Style) []term.Style {
+	slots := make([]term.Style, cellSlots)
+	for i, st := range marks {
+		slots[i] = st
+	}
+	return slots
+}
+
+func TestScrollbarMarkCellReproducesPattern(t *testing.T) {
 	base := term.StyleScrollbar
-	add, mod := term.StyleScrollMarkAdded, term.StyleScrollMarkModified
+	add, mod, del := term.StyleScrollMarkAdded, term.StyleScrollMarkModified, term.StyleScrollMarkDeleted
+	full := func(st term.Style) map[int]term.Style {
+		m := map[int]term.Style{}
+		for i := range cellSlots {
+			m[i] = st
+		}
+		return m
+	}
 	tests := []struct {
-		name        string
-		top, bottom term.Style
-		want        term.Cell
+		name   string
+		glyphs []scrollGlyph
+		marks  map[int]term.Style
 	}{
-		{"none", 0, 0, term.Cell{Ch: '█', Style: base}},
-		{"both same", add, add, term.Cell{Ch: '█', Style: add}},
-		{"top only", add, 0, term.Cell{Ch: '▄', Style: base, BgStyle: add}},
-		{"bottom only", 0, add, term.Cell{Ch: '▀', Style: base, BgStyle: add}},
-		{"both differ", add, mod, term.Cell{Ch: '▀', Style: add, BgStyle: mod}},
+		{"no marks", blockGlyphs, nil},
+		{"full cell", blockGlyphs, full(add)},
+		{"top half", blockGlyphs, map[int]term.Style{0: mod, 1: mod, 2: mod, 3: mod}},
+		{"bottom half", blockGlyphs, map[int]term.Style{4: del, 5: del, 6: del, 7: del}},
+		{"top eighth", blockGlyphs, map[int]term.Style{0: add}},
+		{"bottom eighth", blockGlyphs, map[int]term.Style{7: add}},
+		{"bottom quarter", blockGlyphs, map[int]term.Style{6: mod, 7: mod}},
+		{"two colors split", blockGlyphs, map[int]term.Style{0: add, 1: add, 2: add, 3: add, 4: mod, 5: mod, 6: mod, 7: mod}},
+		{"thin bar row 3", legacyGlyphs, map[int]term.Style{3: add}},
+		{"thin bar row 6", legacyGlyphs, map[int]term.Style{6: del}},
+		{"upper quarter", legacyGlyphs, map[int]term.Style{0: mod, 1: mod}},
 	}
 	for _, tt := range tests {
-		if got := markCell(base, tt.top, tt.bottom); got != tt.want {
-			t.Errorf("%s: got %+v, want %+v", tt.name, got, tt.want)
+		want := slotPattern(tt.marks)
+		for i := range want {
+			if want[i] == term.StyleDefault {
+				want[i] = base
+			}
 		}
+		got := drawnSlots(t, markCell(base, slotPattern(tt.marks), tt.glyphs))
+		if fmt.Sprint(got[:]) != fmt.Sprint(want) {
+			t.Errorf("%s: drew %v, want %v", tt.name, got, want)
+		}
+	}
+}
+
+func TestScrollbarMarkCellNeverHidesAMark(t *testing.T) {
+	base := term.StyleScrollbarThumb
+	add, del := term.StyleScrollMarkAdded, term.StyleScrollMarkDeleted
+	for _, glyphs := range [][]scrollGlyph{blockGlyphs, legacyGlyphs} {
+		for a := range cellSlots {
+			for d := range cellSlots {
+				if a == d {
+					continue
+				}
+				slots := slotPattern(map[int]term.Style{a: add, d: del})
+				got := drawnSlots(t, markCell(base, slots, glyphs))
+				if !slices.Contains(got[:], add) || !slices.Contains(got[:], del) {
+					t.Fatalf("added at %d, deleted at %d: drew %v, a mark is hidden", a, d, got)
+				}
+			}
+		}
+	}
+}
+
+func TestScrollbarMarkCellBlocksFallBackToNearestHalf(t *testing.T) {
+	base := term.StyleScrollbar
+	add := term.StyleScrollMarkAdded
+	got := drawnSlots(t, markCell(base, slotPattern(map[int]term.Style{2: add}), blockGlyphs))
+	if got[2] != add || got[6] != base {
+		t.Fatalf("mid-top mark without legacy glyphs drew %v, want it in the top half", got)
 	}
 }
 
@@ -80,14 +167,11 @@ func TestEditorRendersGitChangeOnScrollbar(t *testing.T) {
 	grid := makeGrid(40, 10)
 	e.Render(NewRenderSurface(grid, Rect{W: 40, H: 10}))
 
-	// TotalItems = 200+10-1 = 209, 20 halves: line 150 -> half 14 (top of row 7).
-	got := grid[7][39]
-	if got.Ch != '▄' || got.BgStyle != term.StyleScrollMarkModified {
-		t.Fatalf("scrollbar row 7 = %+v, want modified mark on top half", got)
-	}
+	// TotalItems = 200+10-1 = 209, 80 slots: line 150 -> slot 57, row 7.
 	for y := range 10 {
-		if y != 7 && grid[y][39].BgStyle != term.StyleDefault {
-			t.Fatalf("unexpected mark on row %d: %+v", y, grid[y][39])
+		slots := drawnSlots(t, grid[y][39])
+		if marked := slices.Contains(slots[:], term.StyleScrollMarkModified); marked != (y == 7) {
+			t.Fatalf("scrollbar row %d = %+v, want the modified mark only on row 7", y, grid[y][39])
 		}
 	}
 }

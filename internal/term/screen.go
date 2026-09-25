@@ -81,6 +81,8 @@ const (
 	StyleScrollMarkAdded
 	StyleScrollMarkModified
 	StyleScrollMarkDeleted
+	StyleScrollbarFill
+	StyleScrollbarThumbFill
 	styleCount
 )
 

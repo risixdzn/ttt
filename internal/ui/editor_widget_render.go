@@ -319,6 +319,7 @@ func (e *EditorPaneWidget) Render(surface Surface) {
 			e.scrollbar.TopItem = e.Viewport.TopLine
 		}
 		e.scrollbar.Marks = e.gitScrollMarks(foldsActive, editorW, tabW)
+		e.scrollbar.LegacyGlyphs = e.LegacyScrollbarGlyphs
 		e.scrollbar.Render(surface, scrollbarCol, 0)
 	}
 

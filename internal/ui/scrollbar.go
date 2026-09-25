@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"slices"
+
 	"github.com/eugenioenko/ttt/internal/term"
 
 	"github.com/gdamore/tcell/v3"
@@ -13,18 +15,22 @@ type Scrollbar struct {
 	TotalItems int
 	TopItem    int
 	Marks      []ScrollMark
-	dragging   bool
-	dragOffset int
+	// LegacyGlyphs also draws marks with the Symbols for Legacy Computing
+	// block, which places a thin line anywhere in a cell but is missing from
+	// many fonts.
+	LegacyGlyphs bool
+	dragging     bool
+	dragOffset   int
 }
 
 // ScrollMark highlights Count items starting at Item on the track. Its style
-// must set the same color as foreground and background: a track cell shows two
-// marks at once by drawing a half block, which takes one color from each.
+// must set the same color as foreground and background: a marked cell is a
+// block glyph whose two colors can each come from either side.
 type ScrollMark struct {
 	Item  int
 	Count int
 	Style term.Style
-	Rank  int // wins over lower ranks sharing a half cell
+	Rank  int // wins over lower ranks sharing a slot
 }
 
 func (s *Scrollbar) Visible() bool {
@@ -52,59 +58,160 @@ func (s *Scrollbar) Render(surface Surface, rx, ry int) {
 		return
 	}
 	thumbTop, thumbH := s.ThumbPos()
-	halves := s.markHalves()
+	slots := s.markSlots()
+	glyphs := blockGlyphs
+	if s.LegacyGlyphs {
+		glyphs = legacyGlyphs
+	}
 	for y := 0; y < s.Height; y++ {
 		base := term.StyleScrollbar
 		if y >= thumbTop && y < thumbTop+thumbH {
 			base = term.StyleScrollbarThumb
 		}
 		cell := term.Cell{Ch: '█', Style: base}
-		if halves != nil {
-			cell = markCell(base, halves[2*y], halves[2*y+1])
+		if slots != nil {
+			cell = markCell(base, slots[y*cellSlots:(y+1)*cellSlots], glyphs)
 		}
 		surface.SetCell(rx, ry+y, cell)
 	}
 }
 
-// markHalves resolves Marks to one style per half cell of the track, so the
-// track has twice the resolution of its rows. Every mark lands on at least one
-// half cell however many items share it, so a single changed line in a huge
-// file stays visible.
-func (s *Scrollbar) markHalves() []term.Style {
+// cellSlots is the vertical resolution of one track cell: block glyphs split a
+// cell into eighths.
+const cellSlots = 8
+
+// markSlots resolves Marks to one style per slot of the track. Every mark
+// lands on at least one slot however many items share it, so a single changed
+// line in a huge file stays visible.
+func (s *Scrollbar) markSlots() []term.Style {
 	if len(s.Marks) == 0 || s.TotalItems <= 0 {
 		return nil
 	}
-	n := 2 * s.Height
-	halves := make([]term.Style, n)
+	n := cellSlots * s.Height
+	slots := make([]term.Style, n)
 	ranks := make([]int, n)
-	half := func(item int) int {
-		h := item * n / s.TotalItems
-		return max(0, min(h, n-1))
+	slot := func(item int) int {
+		return max(0, min(item*n/s.TotalItems, n-1))
 	}
 	for _, m := range s.Marks {
-		last := half(m.Item + max(m.Count, 1) - 1)
-		for h := half(m.Item); h <= last; h++ {
-			if halves[h] == term.StyleDefault || m.Rank > ranks[h] {
-				halves[h], ranks[h] = m.Style, m.Rank
+		last := slot(m.Item + max(m.Count, 1) - 1)
+		for i := slot(m.Item); i <= last; i++ {
+			if slots[i] == term.StyleDefault || m.Rank > ranks[i] {
+				slots[i], ranks[i] = m.Style, m.Rank
 			}
 		}
 	}
-	return halves
+	return slots
 }
 
-func markCell(base, top, bottom term.Style) term.Cell {
-	switch {
-	case top == term.StyleDefault && bottom == term.StyleDefault:
-		return term.Cell{Ch: '█', Style: base}
-	case top == bottom:
-		return term.Cell{Ch: '█', Style: top}
-	case bottom == term.StyleDefault:
-		return term.Cell{Ch: '▄', Style: base, BgStyle: top}
-	case top == term.StyleDefault:
-		return term.Cell{Ch: '▀', Style: base, BgStyle: bottom}
-	default:
-		return term.Cell{Ch: '▀', Style: top, BgStyle: bottom}
+// scrollGlyph draws its foreground on the slots set in mask (bit 0 is the top
+// eighth) and its background on the rest.
+type scrollGlyph struct {
+	ch   rune
+	mask uint8
+}
+
+var blockGlyphs = []scrollGlyph{
+	{'▀', 0x0f}, {'▄', 0xf0},
+	{'▔', 0x01}, {'▁', 0x80}, {'▂', 0xc0}, {'▃', 0xe0},
+	{'▅', 0xf8}, {'▆', 0xfc}, {'▇', 0xfe},
+}
+
+var legacyGlyphs = append(slices.Clone(blockGlyphs),
+	scrollGlyph{'\U0001FB76', 0x02}, scrollGlyph{'\U0001FB77', 0x04},
+	scrollGlyph{'\U0001FB78', 0x08}, scrollGlyph{'\U0001FB79', 0x10},
+	scrollGlyph{'\U0001FB7A', 0x20}, scrollGlyph{'\U0001FB7B', 0x40},
+	scrollGlyph{'\U0001FB82', 0x03}, scrollGlyph{'\U0001FB83', 0x07},
+	scrollGlyph{'\U0001FB84', 0x1f}, scrollGlyph{'\U0001FB85', 0x3f},
+	scrollGlyph{'\U0001FB86', 0x7f},
+)
+
+// Costs for drawing a slot in the wrong color. Hiding a mark costs most, so
+// marks keep their place even when it means painting over some track; a mark
+// color missing from the cell entirely is never worth it.
+const (
+	costTrackAsMark = 1
+	costMarkAsOther = 1
+	costMarkAsTrack = 3
+	costMarkHidden  = 100
+)
+
+// markCell picks the glyph and color pair that best reproduces slots, one
+// cell's worth of mark styles (zero means the track). A cell holds only two
+// colors, so with two mark colors present the track color gives way.
+func markCell(base term.Style, slots []term.Style, glyphs []scrollGlyph) term.Cell {
+	colors := []term.Style{base}
+	for _, st := range slots {
+		if st != term.StyleDefault && !slices.Contains(colors, st) {
+			colors = append(colors, st)
+		}
 	}
+	if len(colors) == 1 {
+		return term.Cell{Ch: '█', Style: base}
+	}
+	want := func(i int) term.Style {
+		if slots[i] == term.StyleDefault {
+			return base
+		}
+		return slots[i]
+	}
+	cost := func(mask uint8, fg, bg term.Style) int {
+		c := 0
+		for i := range cellSlots {
+			got := bg
+			if mask&(1<<i) != 0 {
+				got = fg
+			}
+			switch w := want(i); {
+			case got == w:
+			case w == base:
+				c += costTrackAsMark
+			case got == base:
+				c += costMarkAsTrack
+			default:
+				c += costMarkAsOther
+			}
+		}
+		for _, st := range colors[1:] {
+			if (mask == 0 || st != fg) && (mask == 0xff || st != bg) {
+				c += costMarkHidden
+			}
+		}
+		return c
+	}
+
+	best := term.Cell{Ch: '█', Style: base}
+	bestCost := cost(0xff, base, base)
+	for _, st := range colors[1:] {
+		if c := cost(0xff, st, st); c < bestCost {
+			best, bestCost = term.Cell{Ch: '█', Style: st}, c
+		}
+	}
+	for _, g := range glyphs {
+		for _, fg := range colors {
+			for _, bg := range colors {
+				if fg == bg {
+					continue
+				}
+				if c := cost(g.mask, fg, bg); c < bestCost {
+					best, bestCost = term.Cell{Ch: g.ch, Style: fg, BgStyle: trackFill(bg)}, c
+				}
+			}
+		}
+	}
+	return best
+}
+
+// trackFill swaps a track style, which only colors the foreground, for one
+// that can also serve as a background.
+func trackFill(st term.Style) term.Style {
+	switch st {
+	case term.StyleScrollbar:
+		return term.StyleScrollbarFill
+	case term.StyleScrollbarThumb:
+		return term.StyleScrollbarThumbFill
+	}
+	return st
 }
 
 func (s *Scrollbar) HandleEvent(ev tcell.Event) (newTopItem int, consumed bool) {

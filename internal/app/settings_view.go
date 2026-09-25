@@ -174,6 +174,9 @@ func settingsCategories() []settingsCategory {
 			{Label: "Icons", Kind: settingEnum, Options: iconModeItems,
 				GetString: func(s *config.Settings) string { return s.Appearance.Icons },
 				SetString: func(s *config.Settings, v string) { s.Appearance.Icons = v }},
+			{Label: "Scrollbar glyphs", Kind: settingEnum, Options: scrollbarGlyphItems,
+				GetString: func(s *config.Settings) string { return s.Appearance.ScrollbarGlyphs },
+				SetString: func(s *config.Settings, v string) { s.Appearance.ScrollbarGlyphs = v }},
 			{Label: "Chevron: collapsed", Kind: settingString,
 				GetString: func(s *config.Settings) string { return s.Appearance.Chevrons.Collapsed },
 				SetString: func(s *config.Settings, v string) { s.Appearance.Chevrons.Collapsed = v }},
@@ -210,6 +213,13 @@ func iconModeItems() []widgets.SelectItem {
 	return []widgets.SelectItem{
 		{ID: config.IconsNerdFont, Label: "Nerd Font"},
 		{ID: config.IconsNone, Label: "None"},
+	}
+}
+
+func scrollbarGlyphItems() []widgets.SelectItem {
+	return []widgets.SelectItem{
+		{ID: config.ScrollbarGlyphsBlocks, Label: "Blocks"},
+		{ID: config.ScrollbarGlyphsLegacy, Label: "Legacy Computing"},
 	}
 }
 

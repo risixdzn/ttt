@@ -86,6 +86,8 @@ func BuildStyleMap(theme config.ThemeConfig, opts ...StyleMapOption) term.StyleM
 	applyStyleDef(&m, term.StyleActiveLine, theme.Editor.ActiveLine)
 	applyStyleDef(&m, term.StyleScrollbar, config.StyleDef{Fg: theme.Scrollbar.Bg})
 	applyStyleDef(&m, term.StyleScrollbarThumb, config.StyleDef{Fg: theme.Scrollbar.Fg})
+	applyStyleDef(&m, term.StyleScrollbarFill, config.StyleDef{Fg: theme.Scrollbar.Bg, Bg: theme.Scrollbar.Bg})
+	applyStyleDef(&m, term.StyleScrollbarThumbFill, config.StyleDef{Fg: theme.Scrollbar.Fg, Bg: theme.Scrollbar.Fg})
 	applyStyleDef(&m, term.StyleScrollMarkAdded, config.StyleDef{Fg: theme.Diff.GutterAdded.Fg, Bg: theme.Diff.GutterAdded.Fg})
 	applyStyleDef(&m, term.StyleScrollMarkModified, config.StyleDef{Fg: theme.Diff.GutterModified.Fg, Bg: theme.Diff.GutterModified.Fg})
 	applyStyleDef(&m, term.StyleScrollMarkDeleted, config.StyleDef{Fg: theme.Diff.GutterDeleted.Fg, Bg: theme.Diff.GutterDeleted.Fg})
